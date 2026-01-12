@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-01-12
+
+### Changed
+
+- Consolidated example app into single file for better pub.dev visibility.
+
 ## [0.1.0] - 2026-01-12
 
 ### Added

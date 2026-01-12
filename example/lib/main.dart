@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_ppg/flutter_ppg.dart';
-import 'waveform_painter.dart';
 
 void main() {
   runApp(const MyApp());
@@ -36,10 +35,10 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
   PPGSignal? _currentSignal;
   String _status = 'Initializing...';
   bool _isScanning = false;
-  bool _isTransitioning = false; // Guard against rapid START/STOP
+  bool _isTransitioning = false;
   int _timeLeft = 30;
   Timer? _timer;
-  Timer? _uiUpdateTimer; // Throttle UI updates
+  Timer? _uiUpdateTimer;
 
   // Data buffers for visualization
   final List<double> _rawHistory = [];
@@ -48,9 +47,7 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
   List<int> _currentPeakIndices = [];
   static const int _historyLimit = 150;
 
-  // Pending signal for throttled update
   PPGSignal? _pendingSignal;
-
   StreamController<CameraImage>? _imageStreamController;
   StreamSubscription<PPGSignal>? _ppgSubscription;
 
@@ -68,36 +65,23 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
         return;
       }
       final camera = cameras.firstWhere((c) => c.lensDirection == CameraLensDirection.back, orElse: () => cameras.first);
-
       _controller = CameraController(camera, ResolutionPreset.low, enableAudio: false, imageFormatGroup: ImageFormatGroup.yuv420);
-
       await _controller!.initialize();
-      if (mounted) {
-        setState(() => _status = 'Ready. Press Start to measure.');
-      }
+      if (mounted) setState(() => _status = 'Ready. Press Start to measure.');
     } catch (e) {
-      if (mounted) {
-        setState(() => _status = 'Camera error: $e');
-      }
+      if (mounted) setState(() => _status = 'Camera error: $e');
     }
   }
 
   void _toggleScanning() {
-    if (_isTransitioning) return; // Guard against rapid clicks
-    if (_isScanning) {
-      _stopProcessing();
-    } else {
-      _startProcessing();
-    }
+    if (_isTransitioning) return;
+    _isScanning ? _stopProcessing() : _startProcessing();
   }
 
   Future<void> _startProcessing() async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-    if (_isTransitioning) return;
-
+    if (_controller == null || !_controller!.value.isInitialized || _isTransitioning) return;
     _isTransitioning = true;
 
-    // Reset State
     setState(() {
       _isScanning = true;
       _timeLeft = 30;
@@ -116,26 +100,18 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
       debugPrint('Flash error: $e');
     }
 
-    // Start countdown timer
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && _isScanning) {
         setState(() => _timeLeft--);
-        if (_timeLeft <= 0) {
-          _stopProcessing();
-        }
+        if (_timeLeft <= 0) _stopProcessing();
       }
     });
 
-    // Start UI update timer (throttled to ~10fps instead of 30fps)
     _uiUpdateTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      if (mounted && _pendingSignal != null) {
-        _applyPendingSignal();
-      }
+      if (mounted && _pendingSignal != null) _applyPendingSignal();
     });
 
-    // Create stream controller
     _imageStreamController = StreamController<CameraImage>();
-
     try {
       await _controller!.startImageStream((image) {
         if (_imageStreamController != null && !_imageStreamController!.isClosed) {
@@ -149,10 +125,8 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
       return;
     }
 
-    // Subscribe to PPG service (NO setState here - just buffer the signal)
     _ppgSubscription = _ppgService.processImageStream(_imageStreamController!.stream).listen((signal) {
       _pendingSignal = signal;
-      // Data buffering happens here (lightweight, no setState)
       _rawHistory.add(signal.rawIntensity);
       _filteredHistory.add(signal.filteredIntensity);
       if (_rawHistory.length > _historyLimit) _rawHistory.removeAt(0);
@@ -171,16 +145,13 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
     if (_pendingSignal == null) return;
     final signal = _pendingSignal!;
     _pendingSignal = null;
-
     setState(() {
       _currentSignal = signal;
-      if (signal.quality == SignalQuality.good) {
-        _status = 'Signal Good - Detecting...';
-      } else if (signal.quality == SignalQuality.fair) {
-        _status = 'Signal Fair - Keep steady';
-      } else {
-        _status = 'Signal Poor - Cover camera';
-      }
+      _status = signal.quality == SignalQuality.good
+          ? 'Signal Good - Detecting...'
+          : signal.quality == SignalQuality.fair
+          ? 'Signal Fair - Keep steady'
+          : 'Signal Poor - Cover camera';
     });
   }
 
@@ -189,21 +160,17 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
     _isTransitioning = true;
 
     _timer?.cancel();
-    _timer = null;
     _uiUpdateTimer?.cancel();
-    _uiUpdateTimer = null;
-
     await _ppgSubscription?.cancel();
-    _ppgSubscription = null;
-
     await _imageStreamController?.close();
+    _timer = null;
+    _uiUpdateTimer = null;
+    _ppgSubscription = null;
     _imageStreamController = null;
 
     if (_controller != null && _controller!.value.isInitialized) {
       try {
-        if (_controller!.value.isStreamingImages) {
-          await _controller!.stopImageStream();
-        }
+        if (_controller!.value.isStreamingImages) await _controller!.stopImageStream();
         await _controller!.setFlashMode(FlashMode.off);
       } catch (e) {
         debugPrint('Stop camera error: $e');
@@ -216,7 +183,6 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
         _status = 'Measurement Complete.';
       });
     }
-
     _isTransitioning = false;
   }
 
@@ -234,37 +200,32 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
   @override
   Widget build(BuildContext context) {
     String hrDisplay = '--';
-    if (_rrHistory.isNotEmpty) {
-      final rr = _rrHistory.last;
-      if (rr > 0) {
-        hrDisplay = '${(60000 / rr).round()}';
-      }
+    if (_rrHistory.isNotEmpty && _rrHistory.last > 0) {
+      hrDisplay = '${(60000 / _rrHistory.last).round()}';
     }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Flutter PPG Demo')),
       body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildCameraPreview(),
-                  const SizedBox(width: 16),
-                  Expanded(child: _buildStatsPanel(hrDisplay)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _buildWaveformCard(title: 'Raw Signal (Red Channel)', data: _rawHistory, color: Colors.red.shade300, peakIndices: []),
-              const SizedBox(height: 12),
-              _buildWaveformCard(title: 'Filtered Signal (Bandpass)', data: _filteredHistory, color: Colors.greenAccent, peakIndices: _currentPeakIndices),
-              const SizedBox(height: 12),
-              _buildRRHistoryCard(),
-            ],
-          ),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildCameraPreview(),
+                const SizedBox(width: 16),
+                Expanded(child: _buildStatsPanel(hrDisplay)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildWaveformCard('Raw Signal (Red Channel)', _rawHistory, Colors.red.shade300, []),
+            const SizedBox(height: 12),
+            _buildWaveformCard('Filtered Signal (Bandpass)', _filteredHistory, Colors.greenAccent, _currentPeakIndices),
+            const SizedBox(height: 12),
+            _buildRRHistoryCard(),
+          ],
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -286,7 +247,6 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
         child: const Center(child: CircularProgressIndicator()),
       );
     }
-
     return Container(
       height: 100,
       width: 100,
@@ -302,11 +262,9 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
   Widget _buildStatsPanel(String hrDisplay) {
     final snr = _currentSignal?.snr ?? 0.0;
     final quality = _currentSignal?.quality ?? SignalQuality.poor;
-    final peakCount = _currentPeakIndices.length;
-
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -328,18 +286,20 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
             const SizedBox(height: 8),
             Text(_status, style: TextStyle(color: _getQualityColor())),
             const SizedBox(height: 8),
-            Text('Quality: ${quality.name.toUpperCase()} | SNR: ${snr.toStringAsFixed(1)} dB', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            Text('Peaks: $peakCount', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            Text(
+              'Quality: ${quality.name.toUpperCase()} | SNR: ${snr.toStringAsFixed(1)} dB | Peaks: ${_currentPeakIndices.length}',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildWaveformCard({required String title, required List<double> data, required Color color, required List<int> peakIndices}) {
+  Widget _buildWaveformCard(String title, List<double> data, Color color, List<int> peaks) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -347,10 +307,7 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
             const SizedBox(height: 8),
             SizedBox(
               height: 100,
-              child: CustomPaint(
-                painter: WaveformPainter(signalData: data, color: color, peakIndices: peakIndices),
-                child: Container(),
-              ),
+              child: CustomPaint(painter: _WaveformPainter(data, color, peaks), child: Container()),
             ),
           ],
         ),
@@ -361,28 +318,27 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
   Widget _buildRRHistoryCard() {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('RR Intervals (ms)', style: TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 8),
-            if (_rrHistory.isEmpty)
-              const Text('Waiting for data...', style: TextStyle(color: Colors.white54))
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: _rrHistory.map((rr) {
-                  final isOutlier = rr < 400 || rr > 1500;
-                  return Chip(
-                    label: Text('${rr.round()}'),
-                    backgroundColor: isOutlier ? Colors.orange.shade800 : Colors.green.shade800,
-                    labelStyle: const TextStyle(fontSize: 11),
-                    visualDensity: VisualDensity.compact,
-                  );
-                }).toList(),
-              ),
+            _rrHistory.isEmpty
+                ? const Text('Waiting for data...', style: TextStyle(color: Colors.white54))
+                : Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: _rrHistory.map((rr) {
+                      final isOutlier = rr < 400 || rr > 1500;
+                      return Chip(
+                        label: Text('${rr.round()}'),
+                        backgroundColor: isOutlier ? Colors.orange.shade800 : Colors.green.shade800,
+                        labelStyle: const TextStyle(fontSize: 11),
+                        visualDensity: VisualDensity.compact,
+                      );
+                    }).toList(),
+                  ),
           ],
         ),
       ),
@@ -390,15 +346,59 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
   }
 
   Color _getQualityColor() {
-    if (!_isScanning) return Colors.grey;
-    if (_currentSignal == null) return Colors.grey;
-    switch (_currentSignal!.quality) {
-      case SignalQuality.good:
-        return Colors.greenAccent;
-      case SignalQuality.fair:
-        return Colors.orangeAccent;
-      case SignalQuality.poor:
-        return Colors.redAccent;
+    if (!_isScanning || _currentSignal == null) return Colors.grey;
+    return switch (_currentSignal!.quality) {
+      SignalQuality.good => Colors.greenAccent,
+      SignalQuality.fair => Colors.orangeAccent,
+      SignalQuality.poor => Colors.redAccent,
+    };
+  }
+}
+
+/// Lightweight waveform painter with optional peak markers.
+class _WaveformPainter extends CustomPainter {
+  final List<double> data;
+  final Color color;
+  final List<int> peaks;
+
+  _WaveformPainter(this.data, this.color, this.peaks);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (data.isEmpty) return;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final path = Path();
+    final w = size.width, h = size.height, len = data.length;
+
+    double minV = data.reduce((a, b) => a < b ? a : b), maxV = data.reduce((a, b) => a > b ? a : b);
+    final range = maxV - minV, pad = range * 0.1;
+    minV -= pad;
+    maxV += pad;
+    final scaleY = (maxV == minV) ? 1.0 : h / (maxV - minV);
+    final stepX = w / (len - 1);
+
+    for (int i = 0; i < len; i++) {
+      final x = i * stepX, y = h - ((data[i] - minV) * scaleY);
+      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+    }
+    canvas.drawPath(path, paint);
+
+    if (peaks.isNotEmpty) {
+      final peakPaint = Paint()
+        ..color = Colors.yellowAccent
+        ..style = PaintingStyle.fill;
+      for (final idx in peaks) {
+        if (idx >= 0 && idx < len) {
+          canvas.drawCircle(Offset(idx * stepX, h - ((data[idx] - minV) * scaleY)), 5, peakPaint);
+        }
+      }
     }
   }
+
+  @override
+  bool shouldRepaint(covariant _WaveformPainter old) => old.data != data || old.peaks != peaks || old.color != color;
 }
