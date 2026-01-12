@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-01-12
+
+### Changed
+
+- Updated `camera` dependency to ^0.11.3.
+
 ## [0.1.1] - 2026-01-12
 
 ### Changed

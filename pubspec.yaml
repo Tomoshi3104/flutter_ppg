@@ -1,6 +1,6 @@
 name: flutter_ppg
 description: A Flutter package for camera-based PPG (Photoplethysmography) signal processing. Extracts RR intervals from camera frames for heart rate and HRV analysis.
-version: 0.1.1
+version: 0.1.2
 repository: https://github.com/Tomoshi3104/flutter_ppg
 issue_tracker: https://github.com/Tomoshi3104/flutter_ppg/issues
 topics:
@@ -17,7 +17,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  camera: ^0.10.5
+  camera: ^0.11.3
 
 dev_dependencies:
   flutter_test:
