@@ -1,9 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_ppg/src/outlier_filter.dart';
+import 'package:flutter_ppg/src/models/ppg_config.dart';
 
 void main() {
   group('OutlierFilter', () {
-    const filter = OutlierFilter();
+    final filter = OutlierFilter.fromConfig(const PPGConfig());
 
     test('filterOutliers removes physiological impossible values', () {
       final input = [50.0, 800.0, 900.0, 2500.0, 1000.0];
@@ -26,6 +27,26 @@ void main() {
       final output = filter.applyIQRMethod(input);
       expect(output, containsAll([98.0, 99.0, 100.0, 101.0, 102.0]));
       expect(output, isNot(contains(500.0)));
+    });
+
+    test('adjacent RR validation accepts gradual changes', () {
+      final rr = [800.0, 820.0, 840.0, 860.0, 880.0];
+      final result = filter.filterOutliersWithStats(rr);
+      expect(result.intervals.length, equals(5));
+      expect(result.rejectionRatio, equals(0.0));
+    });
+
+    test('adjacent RR validation rejects impossible jumps', () {
+      final rr = [800.0, 400.0, 850.0];
+      final result = filter.filterOutliersWithStats(rr);
+      expect(result.rejectedCount, greaterThan(0));
+    });
+
+    test('rejects PhiBui example case', () {
+      final rr = [850.0, 420.0, 1200.0, 650.0, 350.0, 950.0, 510.0, 1100.0];
+      final result = filter.filterOutliersWithStats(rr);
+      expect(result.rejectionRatio, greaterThan(0.20));
+      expect(result.isQualityAcceptable, isFalse);
     });
   });
 }

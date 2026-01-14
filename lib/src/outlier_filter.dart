@@ -1,27 +1,90 @@
+import 'models/filter_result.dart';
+import 'models/ppg_config.dart';
+
 /// Filters RR intervals to remove artifacts and noise.
 class OutlierFilter {
-  const OutlierFilter();
+  final double minRRMs;
+  final double maxRRMs;
+  final double maxAdjacentChangeRatio;
 
-  // Physiological limits for RR intervals (in ms)
-  // 300ms = 200 BPM (Max HR)
-  // 2000ms = 30 BPM (Min HR)
-  static const double minRR = 300.0;
-  static const double maxRR = 2000.0;
+  const OutlierFilter({
+    required this.minRRMs,
+    required this.maxRRMs,
+    required this.maxAdjacentChangeRatio,
+  }) : assert(minRRMs > 0),
+       assert(maxRRMs > minRRMs),
+       assert(maxAdjacentChangeRatio >= 0);
+
+  factory OutlierFilter.fromConfig(PPGConfig config) {
+    return OutlierFilter(
+      minRRMs: config.minRRMs,
+      maxRRMs: config.maxRRMs,
+      maxAdjacentChangeRatio: config.maxAdjacentRRChangeRatio,
+    );
+  }
 
   /// Filters outliers from [rrIntervals] using Interquartile Range (IQR) method
   /// and physiological limits.
   ///
   /// returns a clean list of RR intervals.
   List<double> filterOutliers(List<double> rrIntervals) {
-    if (rrIntervals.length < 4) return rrIntervals;
+    return filterOutliersWithStats(rrIntervals).intervals;
+  }
 
-    // 1. Physiological Filter first (Fast reject)
-    final physioFiltered = rrIntervals.where((rr) => rr >= minRR && rr <= maxRR).toList();
+  /// Filters outliers and returns filtering statistics.
+  FilterResult filterOutliersWithStats(List<double> rrIntervals) {
+    if (rrIntervals.isEmpty) {
+      return const FilterResult(
+        intervals: [],
+        totalInput: 0,
+        rejectedCount: 0,
+        rejectionRatio: 0.0,
+      );
+    }
 
-    if (physioFiltered.length < 4) return physioFiltered;
+    int rejected = 0;
+    final totalInput = rrIntervals.length;
 
-    // 2. IQR Filter
-    return applyIQRMethod(physioFiltered);
+    // 1. Physiological Filter
+    var filtered = <double>[];
+    for (final rr in rrIntervals) {
+      if (rr >= minRRMs && rr <= maxRRMs) {
+        filtered.add(rr);
+      } else {
+        rejected++;
+      }
+    }
+
+    // 2. Adjacent interval validation
+    if (filtered.length >= 2) {
+      final adjacentFiltered = <double>[filtered[0]];
+      for (int i = 1; i < filtered.length; i++) {
+        final prev = adjacentFiltered.last;
+        final curr = filtered[i];
+        final changeRatio = (curr - prev).abs() / prev;
+
+        if (changeRatio <= maxAdjacentChangeRatio) {
+          adjacentFiltered.add(curr);
+        } else {
+          rejected++;
+        }
+      }
+      filtered = adjacentFiltered;
+    }
+
+    // 3. IQR Filter
+    if (filtered.length >= 4) {
+      final beforeIQR = filtered.length;
+      filtered = applyIQRMethod(filtered);
+      rejected += beforeIQR - filtered.length;
+    }
+
+    return FilterResult(
+      intervals: filtered,
+      totalInput: totalInput,
+      rejectedCount: rejected,
+      rejectionRatio: totalInput > 0 ? rejected / totalInput : 0.0,
+    );
   }
 
   /// Applies the IQR method to filter outliers.

@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-01-14
+
+### Added
+
+- `FrameRateDetector` for automatic FPS detection (24/25/30/60 FPS snapping).
+- `FrameRateDetector.recordFrameMicros` for monotonic timestamp input and stability gating on low FPS streaks.
+- `RRIntervalAnalyzer` for SDRR and mean BPM analysis.
+- `FilterResult` for outlier filtering statistics.
+- `PPGSignal` fields: `frameRate`, `isFPSStable`, `sdrr`, `isSDRRAcceptable`, `driftRate`, `rejectionRatio`, `rejectedIntervalCount`.
+
+### Changed
+
+- RR interval calculation now uses detected FPS instead of fixed 30 FPS.
+- Outlier filtering includes adjacent interval validation and rejection statistics.
+- Signal quality assessment can degrade on excessive baseline drift.
+- Threshold values are centralized in `PPGConfig`.
+- Peak detection uses adaptive prominence based on recent filtered signal variability.
+- Quality assessment window size now scales with frame rate.
+- RR generation is skipped while `isFPSStable` is false.
+
+### Fixed
+
+- RR intervals were incorrect on non-30 FPS devices (e.g., 60 FPS).
+
 ## [0.1.2] - 2026-01-12
 
 ### Changed

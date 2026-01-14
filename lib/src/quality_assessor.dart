@@ -1,9 +1,34 @@
 import 'dart:math' as math;
 import 'package:flutter_ppg/src/models/ppg_signal.dart';
+import 'models/ppg_config.dart';
 
 /// Assesses the quality of the PPG signal.
 class SignalQualityAssessor {
-  const SignalQualityAssessor();
+  final double fingerPresenceMin;
+  final double fingerPresenceMax;
+  final double minGoodSNR;
+  final double minFairSNR;
+  final double maxDriftRate;
+
+  const SignalQualityAssessor({
+    required this.fingerPresenceMin,
+    required this.fingerPresenceMax,
+    required this.minGoodSNR,
+    required this.minFairSNR,
+    required this.maxDriftRate,
+  }) : assert(fingerPresenceMax > fingerPresenceMin),
+       assert(minGoodSNR > minFairSNR),
+       assert(maxDriftRate >= 0);
+
+  factory SignalQualityAssessor.fromConfig(PPGConfig config) {
+    return SignalQualityAssessor(
+      fingerPresenceMin: config.fingerPresenceMin,
+      fingerPresenceMax: config.fingerPresenceMax,
+      minGoodSNR: config.minGoodSNR,
+      minFairSNR: config.minFairSNR,
+      maxDriftRate: config.maxDriftRate,
+    );
+  }
 
   /// Checks if the finger is placed on the camera based on raw intensity.
   ///
@@ -12,7 +37,7 @@ class SignalQualityAssessor {
   /// - Too bright (> 250): Flashlight causing saturation/blooming.
   /// - Good range: approx 60 - 240.
   bool isFingerPresent(double rawIntensity) {
-    return rawIntensity > 30.0 && rawIntensity < 250.0;
+    return rawIntensity > fingerPresenceMin && rawIntensity < fingerPresenceMax;
   }
 
   /// Calculates Signal-to-Noise Ratio (SNR) in decibels (dB).
@@ -39,7 +64,10 @@ class SignalQualityAssessor {
   }
 
   /// Determines overall signal quality.
-  SignalQuality assessQuality(List<double> recentSignals) {
+  ///
+  /// If [frameRate] is provided, the minimum window size is derived from it
+  /// (roughly 1 second of data). Otherwise, defaults to 30 samples.
+  SignalQuality assessQuality(List<double> recentSignals, {double? frameRate}) {
     if (recentSignals.isEmpty) return SignalQuality.poor;
 
     // 1. Check Intensity Saturation on the *latest* sample
@@ -49,7 +77,8 @@ class SignalQualityAssessor {
     }
 
     // 2. Check SNR (requires window)
-    if (recentSignals.length < 30) {
+    final minSamples = frameRate != null ? frameRate.round() : 30;
+    if (recentSignals.length < minSamples) {
       // Not enough data for robust stats
       return SignalQuality.fair;
     }
@@ -59,9 +88,59 @@ class SignalQualityAssessor {
     // Thresholds need tuning.
     // > 0 dB: Signal power > Noise power.
     // Typical good PPG might be 5-10 dB?
-    if (snr > 5.0) return SignalQuality.good;
-    if (snr > 0.0) return SignalQuality.fair;
+    if (snr > minGoodSNR) return SignalQuality.good;
+    if (snr > minFairSNR) return SignalQuality.fair;
     return SignalQuality.poor;
+  }
+
+  /// Calculates the baseline drift rate (intensity units per second).
+  ///
+  /// Uses linear regression slope on the recent signal window.
+  double calculateDriftRate(List<double> signal, double frameRate) {
+    if (signal.length < 10) return 0.0;
+
+    final n = signal.length;
+    double sumX = 0.0;
+    double sumY = 0.0;
+    double sumXY = 0.0;
+    double sumX2 = 0.0;
+
+    for (int i = 0; i < n; i++) {
+      final x = i.toDouble();
+      final y = signal[i];
+      sumX += x;
+      sumY += y;
+      sumXY += x * y;
+      sumX2 += x * x;
+    }
+
+    final denominator = (n * sumX2 - sumX * sumX);
+    if (denominator == 0.0) return 0.0;
+
+    final slope = (n * sumXY - sumX * sumY) / denominator;
+
+    // Convert from units/frame to units/second
+    return slope * frameRate;
+  }
+
+  /// Enhanced quality assessment including drift detection.
+  SignalQuality assessQualityWithDrift(
+    List<double> recentSignals,
+    double frameRate,
+  ) {
+    final basicQuality = assessQuality(recentSignals, frameRate: frameRate);
+    if (basicQuality == SignalQuality.poor) {
+      return SignalQuality.poor;
+    }
+
+    final driftRate = calculateDriftRate(recentSignals, frameRate).abs();
+    if (driftRate > maxDriftRate) {
+      return basicQuality == SignalQuality.good
+          ? SignalQuality.fair
+          : SignalQuality.poor;
+    }
+
+    return basicQuality;
   }
 
   double _calculateVariance(List<double> data) {

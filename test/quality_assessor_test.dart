@@ -2,10 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_ppg/src/quality_assessor.dart';
 import 'dart:math' as math;
 import 'package:flutter_ppg/src/models/ppg_signal.dart';
+import 'package:flutter_ppg/src/models/ppg_config.dart';
 
 void main() {
   group('SignalQualityAssessor', () {
-    const assessor = SignalQualityAssessor();
+    final assessor = SignalQualityAssessor.fromConfig(const PPGConfig());
 
     test('isFingerPresent checks bounds', () {
       expect(assessor.isFingerPresent(10.0), false); // Too dark
@@ -33,6 +34,24 @@ void main() {
       // Saturated
       final saturated = [255.0];
       expect(assessor.assessQuality(saturated), SignalQuality.poor);
+    });
+
+    test('detects stable signal (low drift)', () {
+      final signal = List.generate(60, (i) => 150.0 + (i % 3) * 2.0);
+      final driftRate = assessor.calculateDriftRate(signal, 30.0);
+      expect(driftRate.abs(), lessThan(10.0));
+    });
+
+    test('detects drifting signal', () {
+      final signal = List.generate(60, (i) => 150.0 + i.toDouble());
+      final driftRate = assessor.calculateDriftRate(signal, 30.0);
+      expect(driftRate, greaterThan(20.0));
+    });
+
+    test('downgrades quality on high drift', () {
+      final signal = List.generate(60, (i) => 150.0 + i * 2.0);
+      final quality = assessor.assessQualityWithDrift(signal, 30.0);
+      expect(quality, isNot(SignalQuality.good));
     });
   });
 }

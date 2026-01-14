@@ -46,9 +46,87 @@ ppgService.processImageStream(streamController.stream).listen((PPGSignal signal)
     print('Last RR: ${signal.rrIntervals.last} ms');
   }
 });
+
+// Remember to dispose when done:
+// streamController.close();
+// ppgService.dispose();
 ```
 
 See the `example/` directory for a complete working application.
+
+### 3. Custom Configuration (PPGConfig)
+
+You can override thresholds and timing using `PPGConfig`:
+
+```dart
+final config = PPGConfig(
+  samplingRate: 30,
+  windowSizeSeconds: 10,
+  minRRMs: 300.0,
+  maxRRMs: 2000.0,
+  maxAdjacentRRChangeRatio: 0.30,
+  maxAcceptableSDRRMs: 150.0,
+  maxDriftRate: 50.0,
+  minGoodSNR: 5.0,
+  minFairSNR: 0.0,
+  fingerPresenceMin: 30.0,
+  fingerPresenceMax: 250.0,
+);
+
+final ppgService = FlutterPPGService(config: config);
+```
+
+**Override Priority (SSOT rules):**
+- If you pass custom instances (`qualityAssessor`, `outlierFilter`, `rrIntervalAnalyzer`, `peakDetector`),
+  those **override** `PPGConfig` values for their respective behavior.
+- If you do **not** pass a custom instance, `FlutterPPGService` builds it from `PPGConfig`.
+- If you pass a custom `PeakDetector`, adaptive min-distance (FPS-based) is **not** applied.
+
+### 4. Recommended Measurement Flow (Client-side)
+
+The library emits raw metrics every frame. **Session control (warm-up, duration, acceptance) should
+live in your app**, not inside the package.
+
+Suggested gating logic:
+- **Ignore the first ~10 seconds** (warm-up)
+- Require **`signal.isFPSStable == true`**
+- Require **`signal.rejectionRatio <= 0.20`**
+- Require **`signal.isSDRRAcceptable == true`**
+
+Note: when `isFPSStable` is false, the package skips RR interval generation
+and emits empty `rrIntervals` for that frame.
+
+Example (pseudo):
+```dart
+if (signal.isFPSStable &&
+    signal.rejectionRatio <= 0.20 &&
+    signal.isSDRRAcceptable &&
+    signal.quality != SignalQuality.poor) {
+  // Accept this signal for BPM/HRV calculation
+}
+```
+
+### 5. Operational Notes (Recommended)
+
+These are practical guidelines for more stable measurements in real apps:
+
+- **Low FPS segments**: if `signal.frameRate` drops significantly (e.g., <20 FPS),
+  discard those samples from BPM/HRV aggregation.
+- **isFPSStable behavior**: stability requires sustained FPS above a minimum threshold
+  (internally, consecutive low-FPS updates will set `isFPSStable=false`).
+- **Recommended measurement duration**: 30–60 seconds yields more stable HRV metrics.
+- **UI load matters**: heavy animations or frequent setState can reduce FPS and degrade signal quality.
+- **Finger placement**: cover both lens and flash; minimize motion and pressure changes.
+- **FPS stability**: frame rate is estimated from a monotonic clock to reduce wall-clock jitter.
+- **Logging (optional)**: for debugging, capture at least:
+  - `frameRate`, `isFPSStable`, `quality`, `snr`
+  - `sdrr`, `rejectionRatio`, `driftRate`
+  - raw/filtered **mean + range** over a short window
+
+**Adaptive prominence details (current defaults):**
+- `minProminence = max(0.2, 0.5 * stddev)` computed from the **last ~60 filtered samples**
+- The detector is updated only when the prominence changes by **≥ 0.05**
+- If there is not enough data, the base `PeakDetector.minProminence` is used
 
 ## 👆 How to Measure
 
@@ -64,14 +142,16 @@ For accurate readings in the `example` app (or your implementation):
 
 - **Signal Processing**:
   - Red channel extraction (optimized for YUV420/BGRA8888).
-  - Bandpass filtering (0.7Hz - 3.0Hz) to isolate pulse.
-  - Detrending to remove DC offset shifts.
+  - Simple bandpass approximation (SMA short - SMA long) to isolate pulse band.
+  - Detrending helper available (not wired into the current pipeline).
 - **Peak Detection**:
   - Robust local maxima detection with minimum distance enforcement.
   - Outlier rejection (IQR method) for cleaner RR intervals.
+  - Adaptive prominence based on recent filtered signal variability.
 - **Quality Assessment**:
   - Real-time Signal Quality Index (Good/Fair/Poor).
   - Finger presence detection based on light intensity.
+  - SNR-based quality evaluation.
 
 ## 🧩 Architecture
 
@@ -81,6 +161,27 @@ The package follows clean architecture principles:
 - `PeakDetector`: Algorithms for identifying heartbeats.
 - `SignalQualityAssessor`: Heuristics for signal validity.
 - `FlutterPPGService`: Orchestrator (Stateful) managing the data flow and buffers.
+
+## ✅ Current Defaults / Planned Thresholds (Confirm in Refactor)
+
+**Current defaults (v0.1.x):**
+- Sampling rate: 30 FPS (`PPGConfig.samplingRate`)
+- Window size: 10 seconds (`PPGConfig.windowSizeSeconds`)
+- Peak min distance: derived from `PPGConfig.minRRMs` + FPS
+- Peak min prominence: 0.5 (`PeakDetector.minProminence`)
+- RR physiological range: 300–2000ms (`PPGConfig.minRRMs` / `maxRRMs`)
+- Finger presence: 30–250 intensity (`PPGConfig.fingerPresenceMin` / `fingerPresenceMax`)
+- SNR quality: >5 dB = good, >0 dB = fair (`PPGConfig.minGoodSNR` / `minFairSNR`)
+
+**Planned thresholds (v0.2.x, needs agreement):**
+- Max adjacent RR change: 30% (`PPGConfig.maxAdjacentRRChangeRatio`)
+- Max acceptable SDRR: 150ms (`PPGConfig.maxAcceptableSDRRMs`)
+- Max baseline drift: 50 intensity units/sec (`PPGConfig.maxDriftRate`)
+- Frame-rate auto detection: 24/25/30/60 FPS + adaptive timing windows
+
+**Notes:**
+- "Intensity" is derived from camera pixel data (0–255-ish scale).
+- Once FPS detection is added, time-based windows/min-distance will be derived from actual FPS.
 
 ## 📝 License
 

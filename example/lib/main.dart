@@ -39,6 +39,11 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
   int _timeLeft = 30;
   Timer? _timer;
   Timer? _uiUpdateTimer;
+  DateTime? _lastLogTime;
+  static const Duration _logInterval = Duration(seconds: 1);
+  final bool _enableConsoleLog = true;
+  static const int _bpmWindowSize = 8;
+  static const int _statsWindowSize = 60;
 
   // Data buffers for visualization
   final List<double> _rawHistory = [];
@@ -126,6 +131,7 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
     }
 
     _ppgSubscription = _ppgService.processImageStream(_imageStreamController!.stream).listen((signal) {
+      _maybeLogSignal(signal);
       _pendingSignal = signal;
       _rawHistory.add(signal.rawIntensity);
       _filteredHistory.add(signal.filteredIntensity);
@@ -139,6 +145,87 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
     });
 
     _isTransitioning = false;
+  }
+
+  void _maybeLogSignal(PPGSignal signal) {
+    if (!_enableConsoleLog) return;
+    final now = DateTime.now();
+    if (_lastLogTime != null && now.difference(_lastLogTime!) < _logInterval) return;
+    _lastLogTime = now;
+
+    final meanRR = _meanRecentRR();
+    final bpm = meanRR > 0 ? (60000 / meanRR).round() : 0;
+    final isValid = _isSignalValid(signal);
+    final validityReason = _validityReason(signal);
+    final rawStats = _calcStats(_rawHistory);
+    final filteredStats = _calcStats(_filteredHistory);
+
+    debugPrint(
+      '[flutter_ppg][example] '
+      'fps=${signal.frameRate.toStringAsFixed(1)} '
+      'stable=${signal.isFPSStable} '
+      'quality=${signal.quality.name} '
+      'snr=${signal.snr.toStringAsFixed(1)}dB '
+      'bpm=${bpm == 0 ? "--" : bpm} '
+      'sdrr=${signal.sdrr.toStringAsFixed(1)} '
+      'rej=${(signal.rejectionRatio * 100).toStringAsFixed(0)}% '
+      'drift=${signal.driftRate.toStringAsFixed(1)} '
+      'valid=$isValid '
+      'reason=${validityReason.isEmpty ? "-" : validityReason} '
+      'raw=${signal.rawIntensity.toStringAsFixed(1)} '
+      'rawMean=${rawStats.mean.toStringAsFixed(1)} '
+      'rawRange=${rawStats.min.toStringAsFixed(1)}..${rawStats.max.toStringAsFixed(1)} '
+      'filt=${signal.filteredIntensity.toStringAsFixed(2)} '
+      'filtMean=${filteredStats.mean.toStringAsFixed(2)} '
+      'filtRange=${filteredStats.min.toStringAsFixed(2)}..${filteredStats.max.toStringAsFixed(2)} '
+      'peaks=${_currentPeakIndices.length} '
+      'rrCount=${signal.rrIntervals.length}',
+    );
+  }
+
+  double _meanRecentRR() {
+    if (_rrHistory.isEmpty) return 0.0;
+    final start = _rrHistory.length > _bpmWindowSize ? _rrHistory.length - _bpmWindowSize : 0;
+    double sum = 0.0;
+    int count = 0;
+    for (int i = start; i < _rrHistory.length; i++) {
+      sum += _rrHistory[i];
+      count++;
+    }
+    return count == 0 ? 0.0 : sum / count;
+  }
+
+  bool _isSignalValid(PPGSignal signal) {
+    return signal.quality != SignalQuality.poor &&
+        signal.isSDRRAcceptable &&
+        signal.rejectionRatio <= 0.20;
+  }
+
+  String _validityReason(PPGSignal signal) {
+    final reasons = <String>[];
+    if (signal.quality == SignalQuality.poor) reasons.add('quality');
+    if (!signal.isSDRRAcceptable) reasons.add('sdrr');
+    if (signal.rejectionRatio > 0.20) reasons.add('rejection');
+    return reasons.join('+');
+  }
+
+  _Stats _calcStats(List<double> values) {
+    if (values.isEmpty) return const _Stats(0.0, 0.0, 0.0);
+    final start = values.length > _statsWindowSize ? values.length - _statsWindowSize : 0;
+    double sum = 0.0;
+    double minV = double.maxFinite;
+    double maxV = -double.maxFinite;
+    int count = 0;
+    for (int i = start; i < values.length; i++) {
+      final v = values[i];
+      sum += v;
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+      count++;
+    }
+    final mean = count == 0 ? 0.0 : sum / count;
+    if (count == 0) return const _Stats(0.0, 0.0, 0.0);
+    return _Stats(mean, minV, maxV);
   }
 
   void _applyPendingSignal() {
@@ -200,9 +287,8 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
   @override
   Widget build(BuildContext context) {
     String hrDisplay = '--';
-    if (_rrHistory.isNotEmpty && _rrHistory.last > 0) {
-      hrDisplay = '${(60000 / _rrHistory.last).round()}';
-    }
+    final meanRR = _meanRecentRR();
+    if (meanRR > 0) hrDisplay = '${(60000 / meanRR).round()}';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Flutter PPG Demo')),
@@ -262,6 +348,9 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
   Widget _buildStatsPanel(String hrDisplay) {
     final snr = _currentSignal?.snr ?? 0.0;
     final quality = _currentSignal?.quality ?? SignalQuality.poor;
+    final rejectionRatio = _currentSignal?.rejectionRatio ?? 0.0;
+    final sdrr = _currentSignal?.sdrr ?? 0.0;
+    final isValid = _currentSignal != null && _isSignalValid(_currentSignal!);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -288,6 +377,11 @@ class _PPGExamplePageState extends State<PPGExamplePage> {
             const SizedBox(height: 8),
             Text(
               'Quality: ${quality.name.toUpperCase()} | SNR: ${snr.toStringAsFixed(1)} dB | Peaks: ${_currentPeakIndices.length}',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Valid: ${isValid ? "YES" : "NO"} | SDRR: ${sdrr.toStringAsFixed(1)} ms | Rej: ${(rejectionRatio * 100).toStringAsFixed(0)}%',
               style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ],
@@ -401,4 +495,12 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _WaveformPainter old) => old.data != data || old.peaks != peaks || old.color != color;
+}
+
+class _Stats {
+  final double mean;
+  final double min;
+  final double max;
+
+  const _Stats(this.mean, this.min, this.max);
 }
