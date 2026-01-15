@@ -12,12 +12,16 @@ This package extracts the raw red channel intensity from camera frames, filters 
 
 ### 1. Installation
 
-Add `flutter_ppg` to your `pubspec.yaml`:
+Add `flutter_ppg` via pub:
 
+```bash
+flutter pub add flutter_ppg
+```
+
+Or add it to your `pubspec.yaml`:
 ```yaml
 dependencies:
-  flutter_ppg:
-    path: ../ # Or your git/pub path
+  flutter_ppg: ^0.2.1
 ```
 
 ### 2. Basic Usage

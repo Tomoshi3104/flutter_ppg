@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-01-15
+
+### Added
+
+- Adaptive peak prominence based on recent filtered signal variability.
+- Monotonic timestamp support for FPS detection with low-FPS stability gating.
+- Example app console logging improvements (validity reasons and signal stats).
+
+### Changed
+
+- `isFPSStable=false` now skips RR generation to reduce false positives.
+- Quality assessment window size scales with detected frame rate.
+- Documentation updated for pub install and operational notes.
+
 ## [0.2.0] - 2026-01-14
 
 ### Added
