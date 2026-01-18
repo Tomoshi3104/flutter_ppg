@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2026-01-18
+
+### Changed
+
+- Expanded `camera` package dependency range from `^0.11.3` to `>=0.10.0` for better compatibility with projects using older camera versions.
+
 ## [0.2.1] - 2026-01-15
 
 ### Added
