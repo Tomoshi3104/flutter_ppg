@@ -16,7 +16,8 @@ class SignalProcessor {
   /// - YUV420 (Android default): Uses statistical approx `Mean(R) ≈ Mean(Y) + 1.402 * (Mean(V) - 128)`
   /// - BGRA8888 (iOS default): Direct byte access
   ///
-  /// Throws [UnsupportedError] for other formats.
+  /// Throws [UnsupportedError] for other formats (including NV21 on older camera
+  /// plugin versions where it may not be explicitly exposed as an enum value).
   double extractRedChannel(CameraImage image) {
     // Fail Fast: Validate image format
     switch (image.format.group) {
@@ -24,9 +25,7 @@ class SignalProcessor {
         return _extractRedFromYUV420(image);
       case ImageFormatGroup.bgra8888:
         return _extractRedFromBGRA8888(image);
-      case ImageFormatGroup.unknown:
-      case ImageFormatGroup.jpeg:
-      case ImageFormatGroup.nv21:
+      default:
         // Attempt fallback or fail if strictly unsupported.
         // For now, fail fast as these require specific implementations.
         throw UnsupportedError('Unsupported image format: ${image.format.group}');

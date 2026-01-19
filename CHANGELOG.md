@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] - 2026-01-19
+
+### Fixed
+
+- Removed direct reference to `ImageFormatGroup.nv21` to maintain compatibility with older `camera` versions during downgrade testing, while still treating unsupported formats as errors at runtime.
+
 ## [0.2.2] - 2026-01-18
 
 ### Changed
