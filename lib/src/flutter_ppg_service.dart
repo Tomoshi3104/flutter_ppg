@@ -13,8 +13,33 @@ import 'models/filter_result.dart';
 import 'utils/ring_buffer.dart';
 
 /// Service to process camera images into PPG signals and RR intervals.
+///
+/// This is the main entry point for PPG signal processing. It processes a stream
+/// of camera images and produces a stream of [PPGSignal] objects containing
+/// heart rate and RR interval information.
+///
+/// The service performs the following processing pipeline:
+/// 1. Extracts intensity from camera frames (red channel)
+/// 2. Detects actual frame rate from timestamps
+/// 3. Applies bandpass filtering to remove noise
+/// 4. Detects peaks in the filtered signal
+/// 5. Calculates RR intervals from peak positions
+/// 6. Filters outliers from RR intervals
+/// 7. Assesses signal quality and provides metrics
+///
+/// Example usage:
+/// ```dart
+/// final service = FlutterPPGService(config: PPGConfig());
+/// final signalStream = service.processImageStream(cameraStream);
+/// await for (final signal in signalStream) {
+///   print('Heart rate: ${signal.rrIntervals.length > 0 ? 
+///     60000 / signal.rrIntervals.average : 'N/A'} BPM');
+/// }
+/// ```
 class FlutterPPGService {
+  /// Configuration for PPG processing parameters.
   final PPGConfig config;
+
   final SignalProcessor _processor;
   final PeakDetector _peakDetector;
   final SignalQualityAssessor _qualityAssessor;
@@ -31,6 +56,18 @@ class FlutterPPGService {
   double _adaptiveMinProminence = 0.0;
   final Stopwatch _frameStopwatch = Stopwatch();
 
+  /// Creates a new [FlutterPPGService] instance.
+  ///
+  /// All parameters are optional and will use default implementations if not provided.
+  /// This allows for dependency injection and testing.
+  ///
+  /// [config] - Configuration for processing parameters. Defaults to [PPGConfig] with default values.
+  /// [processor] - Signal processor for intensity extraction and filtering. Defaults to [SignalProcessor].
+  /// [peakDetector] - Peak detection algorithm. If provided, uses fixed parameters instead of adaptive detection.
+  /// [qualityAssessor] - Signal quality assessment. Defaults to [SignalQualityAssessor] configured from [config].
+  /// [outlierFilter] - Outlier filter for RR intervals. Defaults to [OutlierFilter] configured from [config].
+  /// [frameRateDetector] - Frame rate detection. Defaults to [FrameRateDetector].
+  /// [rrIntervalAnalyzer] - RR interval analysis. Defaults to [RRIntervalAnalyzer] configured from [config].
   FlutterPPGService({
     this.config = const PPGConfig(),
     SignalProcessor? processor,
@@ -68,6 +105,11 @@ class FlutterPPGService {
     }
   }
 
+  /// Disposes of resources and resets internal state.
+  ///
+  /// Call this method when the service is no longer needed to free up memory
+  /// and reset the frame rate detector. After calling [dispose], the service
+  /// should not be used again.
   void dispose() {
     _rawBuffer.clear();
     _filteredBuffer.clear();
@@ -75,13 +117,41 @@ class FlutterPPGService {
     _frameStopwatch.stop();
   }
 
-  /// Returns the detected frame rate.
+  /// Returns the currently detected frame rate in frames per second (FPS).
+  ///
+  /// This value is automatically detected from camera frame timestamps.
+  /// Returns the configured fallback sampling rate if detection hasn't
+  /// started yet or if detection is unstable.
   double get detectedFPS => _frameRateDetector.fps;
 
   /// Returns true if frame rate detection has stabilized.
+  ///
+  /// Frame rate detection requires a warmup period before it's considered
+  /// stable. This property indicates whether enough frames have been processed
+  /// and the detected frame rate is consistent.
   bool get isFPSStable => _frameRateDetector.isStable;
 
   /// Processes a stream of camera images and yields PPG signals.
+  ///
+  /// This is the main processing method that takes a stream of [CameraImage] objects
+  /// and produces a stream of [PPGSignal] objects. Each frame is processed to extract
+  /// intensity, filter the signal, detect peaks, and calculate RR intervals.
+  ///
+  /// The method yields a [PPGSignal] for each input frame, even if the signal quality
+  /// is poor or insufficient data is available. In such cases, the signal will have
+  /// empty RR intervals and appropriate quality indicators.
+  ///
+  /// Processing stages:
+  /// 1. Frame rate detection and stabilization
+  /// 2. Intensity extraction from camera frame
+  /// 3. Signal quality assessment
+  /// 4. Bandpass filtering
+  /// 5. Peak detection (only when frame rate is stable)
+  /// 6. RR interval calculation and outlier filtering
+  /// 7. Signal quality metrics calculation
+  ///
+  /// [images] - Stream of camera images to process.
+  /// Returns a stream of [PPGSignal] objects, one per input frame.
   Stream<PPGSignal> processImageStream(Stream<CameraImage> images) async* {
     await for (final image in images) {
       final now = DateTime.now();

@@ -38,6 +38,19 @@ class PPGConfig {
   /// Maximum intensity for finger presence detection.
   final double fingerPresenceMax;
 
+  /// Creates a [PPGConfig] with the specified parameters.
+  ///
+  /// All parameters have default values suitable for most use cases.
+  /// The following constraints must be satisfied (assertions will fail in debug mode):
+  /// - [samplingRate] must be > 0
+  /// - [windowSizeSeconds] must be > 0
+  /// - [minRRMs] must be > 0
+  /// - [maxRRMs] must be > [minRRMs]
+  /// - [maxAdjacentRRChangeRatio] must be >= 0
+  /// - [maxAcceptableSDRRMs] must be >= 0
+  /// - [maxDriftRate] must be >= 0
+  /// - [fingerPresenceMax] must be > [fingerPresenceMin]
+  /// - [minGoodSNR] must be > [minFairSNR]
   const PPGConfig({
     this.samplingRate = 30, // FPS
     this.windowSizeSeconds = 10,

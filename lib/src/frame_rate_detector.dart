@@ -1,5 +1,31 @@
 /// Detects the actual frame rate from camera frame timestamps.
+///
+/// This class automatically detects the camera's frame rate by analyzing
+/// the intervals between consecutive frames. It uses a rolling window of
+/// frame intervals and calculates the median to determine the actual FPS,
+/// which is then snapped to common frame rates (24, 25, 30, 60 FPS).
+///
+/// The detector requires a warmup period (default: 30 frames) before
+/// considering the detection stable. This helps avoid false readings during
+/// camera initialization.
+///
+/// Example usage:
+/// ```dart
+/// final detector = FrameRateDetector();
+/// for (final image in cameraStream) {
+///   detector.recordFrameMicros(Stopwatch().elapsedMicroseconds);
+///   if (detector.isStable) {
+///     print('Detected FPS: ${detector.fps}');
+///   }
+/// }
+/// ```
 class FrameRateDetector {
+  /// Creates a new [FrameRateDetector] instance.
+  ///
+  /// The detector starts with a default frame rate of 30 FPS and requires
+  /// a warmup period before detection is considered stable.
+  FrameRateDetector();
+
   static const int _warmupFrames = 30;
   static const double _defaultFPS = 30.0;
   static const double _minStableFPS = 20.0;
@@ -67,9 +93,7 @@ class FrameRateDetector {
       _lowFpsStreak = 0;
     }
 
-    _isStable =
-        _frameIntervalsMs.length >= _warmupFrames &&
-        _lowFpsStreak < _lowFpsStreakToUnstable;
+    _isStable = _frameIntervalsMs.length >= _warmupFrames && _lowFpsStreak < _lowFpsStreakToUnstable;
   }
 
   double _snapToCommonFPS(double rawFPS) {

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.4] - 2026-01-22
+
+### Added
+
+- Comprehensive documentation comments for all public APIs including classes, enums, fields, constructors, and methods.
+- Library-level documentation in `flutter_ppg.dart` with quick start example.
+- Detailed comments for `assert` conditions in constructors to inform users about valid parameter ranges.
+
+### Fixed
+
+- Fixed typo in README.md ("ligthly" → "lightly").
+
 ## [0.2.3] - 2026-01-19
 
 ### Fixed

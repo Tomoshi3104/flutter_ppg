@@ -2,13 +2,26 @@ import 'dart:math' as math;
 
 /// Detects peaks in a PPG signal for RR interval calculation.
 class PeakDetector {
+  /// Minimum prominence required for a peak to be detected.
+  ///
+  /// Prominence is the height of the peak relative to the surrounding signal.
+  /// Higher values result in fewer, more prominent peaks being detected.
+  /// Default: 0.5 (heuristic value, should be adaptive based on signal characteristics).
   final double minProminence;
+
+  /// Minimum distance in samples between consecutive peaks.
+  ///
+  /// Prevents detection of peaks that are too close together.
+  /// At 30 FPS, a value of 10 corresponds to approximately 330ms, which is above
+  /// the minimum physiological limit of roughly 250ms (200 BPM).
+  /// Default: 10.
   final int minDistance;
 
-  const PeakDetector({
-    this.minProminence = 0.5, // Heuristic default, should be adaptive
-    this.minDistance = 10, // ~330ms at 30fps, minimum physiological limit roughly 250ms
-  });
+  /// Creates a [PeakDetector] with the specified parameters.
+  ///
+  /// [minProminence] - Minimum prominence for peak detection. Defaults to 0.5.
+  /// [minDistance] - Minimum distance between peaks in samples. Defaults to 10.
+  const PeakDetector({this.minProminence = 0.5, this.minDistance = 10});
 
   /// Finds indices of peaks in the [signal].
   ///

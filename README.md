@@ -21,7 +21,7 @@ flutter pub add flutter_ppg
 Or add it to your `pubspec.yaml`:
 ```yaml
 dependencies:
-  flutter_ppg: ^0.2.1
+  flutter_ppg: ^0.2.4
 ```
 
 ### 2. Basic Usage
@@ -139,7 +139,7 @@ For accurate readings in the `example` app (or your implementation):
 1.  **Enable Flash**: The back camera flash MUST be on (`FlashMode.torch`).
 2.  **Cover Lens & Flash**: Place your fingertip gently over **both** the camera lens and the flash.
     - Do not press too hard (this restricts blood flow).
-    - Do not press too ligthly (ambient light leaks in).
+    - Do not press too lightly (ambient light leaks in).
 3.  **Stay Still**: Motion introduces significant noise. Keep your finger and the phone steady.
 
 ## 📦 Features
@@ -166,26 +166,25 @@ The package follows clean architecture principles:
 - `SignalQualityAssessor`: Heuristics for signal validity.
 - `FlutterPPGService`: Orchestrator (Stateful) managing the data flow and buffers.
 
-## ✅ Current Defaults / Planned Thresholds (Confirm in Refactor)
+## ✅ Current Defaults
 
-**Current defaults (v0.1.x):**
-- Sampling rate: 30 FPS (`PPGConfig.samplingRate`)
+**Current defaults (v0.2.4):**
+- Sampling rate: 30 FPS (`PPGConfig.samplingRate`) - fallback value used before FPS stabilizes
 - Window size: 10 seconds (`PPGConfig.windowSizeSeconds`)
-- Peak min distance: derived from `PPGConfig.minRRMs` + FPS
-- Peak min prominence: 0.5 (`PeakDetector.minProminence`)
+- Peak min distance: derived from `PPGConfig.minRRMs` + detected FPS (adaptive)
+- Peak min prominence: 0.5 (`PeakDetector.minProminence`) - adaptively adjusted based on signal variability
 - RR physiological range: 300–2000ms (`PPGConfig.minRRMs` / `maxRRMs`)
-- Finger presence: 30–250 intensity (`PPGConfig.fingerPresenceMin` / `fingerPresenceMax`)
-- SNR quality: >5 dB = good, >0 dB = fair (`PPGConfig.minGoodSNR` / `minFairSNR`)
-
-**Planned thresholds (v0.2.x, needs agreement):**
 - Max adjacent RR change: 30% (`PPGConfig.maxAdjacentRRChangeRatio`)
 - Max acceptable SDRR: 150ms (`PPGConfig.maxAcceptableSDRRMs`)
 - Max baseline drift: 50 intensity units/sec (`PPGConfig.maxDriftRate`)
-- Frame-rate auto detection: 24/25/30/60 FPS + adaptive timing windows
+- Finger presence: 30–250 intensity (`PPGConfig.fingerPresenceMin` / `fingerPresenceMax`)
+- SNR quality: >5 dB = good, >0 dB = fair (`PPGConfig.minGoodSNR` / `minFairSNR`)
+- Frame-rate auto detection: 24/25/30/60 FPS with adaptive timing windows (`FrameRateDetector`)
 
 **Notes:**
 - "Intensity" is derived from camera pixel data (0–255-ish scale).
-- Once FPS detection is added, time-based windows/min-distance will be derived from actual FPS.
+- Time-based windows and min-distance are automatically derived from the detected FPS.
+- Peak detection uses adaptive prominence based on the last ~60 filtered samples.
 
 ## 📝 License
 

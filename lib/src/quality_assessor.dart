@@ -10,6 +10,12 @@ class SignalQualityAssessor {
   final double minFairSNR;
   final double maxDriftRate;
 
+  /// Creates a [SignalQualityAssessor] with the specified thresholds.
+  ///
+  /// The following constraints must be satisfied (assertions will fail in debug mode):
+  /// - [fingerPresenceMax] must be > [fingerPresenceMin]
+  /// - [minGoodSNR] must be > [minFairSNR]
+  /// - [maxDriftRate] must be >= 0
   const SignalQualityAssessor({
     required this.fingerPresenceMin,
     required this.fingerPresenceMax,
@@ -124,10 +130,7 @@ class SignalQualityAssessor {
   }
 
   /// Enhanced quality assessment including drift detection.
-  SignalQuality assessQualityWithDrift(
-    List<double> recentSignals,
-    double frameRate,
-  ) {
+  SignalQuality assessQualityWithDrift(List<double> recentSignals, double frameRate) {
     final basicQuality = assessQuality(recentSignals, frameRate: frameRate);
     if (basicQuality == SignalQuality.poor) {
       return SignalQuality.poor;
@@ -135,9 +138,7 @@ class SignalQualityAssessor {
 
     final driftRate = calculateDriftRate(recentSignals, frameRate).abs();
     if (driftRate > maxDriftRate) {
-      return basicQuality == SignalQuality.good
-          ? SignalQuality.fair
-          : SignalQuality.poor;
+      return basicQuality == SignalQuality.good ? SignalQuality.fair : SignalQuality.poor;
     }
 
     return basicQuality;
